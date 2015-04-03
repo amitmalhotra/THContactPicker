@@ -7,6 +7,8 @@
 //
 
 #import "THContactPickerViewControllerDemo.h"
+#import "APAddressBook.h"
+#import "APContact.h"
 
 @interface THContactPickerViewControllerDemo () <THContactPickerDelegate>
 
@@ -29,9 +31,50 @@ NSString *THContactPickerContactCellReuseID = @"THContactPickerContactCell";
     if (self) {
         // Custom initialization
         self.title = @"Contacts";
-        self.contacts = [NSArray arrayWithObjects:@"Tristan Himmelman",
-                         @"John Snow", @"Alex Martin", @"Nicolai Small",@"Thomas Lee", @"Nicholas Hudson", @"Bob Barss",
-                         @"Andrew Stall", @"Marc Sarasin", @"Mike Beatson",@"Erica Slon", @"Eric Anderson", @"Josh Salpeter", nil];
+        
+        switch([APAddressBook access])
+        {
+            case APAddressBookAccessUnknown:
+                // Application didn't request address book access yet
+                break;
+                
+            case APAddressBookAccessGranted:
+                // Access granted
+                break;
+                
+            case APAddressBookAccessDenied:
+                // Access denied or restricted by privacy settings
+                break;
+        }
+        
+        APAddressBook *addressBook = [[APAddressBook alloc] init];
+        addressBook.fieldsMask = APContactFieldFirstName | APContactFieldEmails | APContactFieldLastName;
+        addressBook.filterBlock = ^BOOL(APContact *contact)
+        {
+            return contact.emails.count > 0;
+        };
+        
+        addressBook.sortDescriptors = @[
+                                        [NSSortDescriptor sortDescriptorWithKey:@"firstName" ascending:YES],
+                                        [NSSortDescriptor sortDescriptorWithKey:@"lastName" ascending:YES]
+                                        ];
+        
+        
+        // don't forget to show some activity
+        [addressBook loadContacts:^(NSArray *contacts, NSError *error)
+        {
+            // hide activity
+            if (!error)
+            {
+                self.contacts = contacts;
+                [self.tableView reloadData];
+            }
+            else
+            {
+                // show error
+            }
+        }];
+        
     }
     return self;
 }
@@ -48,7 +91,7 @@ NSString *THContactPickerContactCellReuseID = @"THContactPickerContactCell";
     self.contactPickerView = [[THContactPickerView alloc] initWithFrame:CGRectMake(0, 0, self.view.frame.size.width, kPickerViewHeight)];
     self.contactPickerView.autoresizingMask = UIViewAutoresizingFlexibleBottomMargin|UIViewAutoresizingFlexibleWidth;
     self.contactPickerView.delegate = self;
-    [self.contactPickerView setPlaceholderLabelText:@"Who would you like to message?"];
+    [self.contactPickerView setPlaceholderLabelText:@"type emails or pick contacts?"];
     [self.contactPickerView setPromptLabelText:@"To:"];
     //[self.contactPickerView setLimitToOne:YES];
     [self.view addSubview:self.contactPickerView];
@@ -148,11 +191,20 @@ NSString *THContactPickerContactCellReuseID = @"THContactPickerContactCell";
 }
 
 - (NSPredicate *)newFilteringPredicateWithText:(NSString *) text {
-    return [NSPredicate predicateWithFormat:@"self contains[cd] %@", text];
+    return [NSPredicate predicateWithFormat:@"self.firstName contains[cd] %@ || self.lastName contains[cd] %@ OR ANY self.emails CONTAINS[c] %@", text, text, text];
 }
 
 - (NSString *)titleForRowAtIndexPath:(NSIndexPath *)indexPath {
-    return [self.filteredContacts objectAtIndex:indexPath.row];
+    APContact* contact = [self.filteredContacts objectAtIndex:indexPath.row];
+    NSString* firstName = [self nullProofString:contact.firstName];
+    NSString* lastName = [self nullProofString:contact.lastName];
+    NSString* email = [self nullProofString:[contact.emails firstObject]];
+    
+    return [NSString stringWithFormat:@"%@ %@ (%@)",firstName,lastName, email];
+}
+
+-(NSString*)nullProofString:(NSString*)string{
+    return (string.length>0) ? string : @"";
 }
 
 - (void) didChangeSelectedItems {
